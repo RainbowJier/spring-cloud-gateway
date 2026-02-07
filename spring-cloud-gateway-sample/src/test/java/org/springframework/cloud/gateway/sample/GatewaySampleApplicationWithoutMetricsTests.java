@@ -16,13 +16,10 @@
 
 package org.springframework.cloud.gateway.sample;
 
-import java.time.Duration;
-
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.cloud.gateway.sample.GatewaySampleApplicationTests.TestConfig;
@@ -32,10 +29,18 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.util.TestSocketUtils;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-@ClassPathExclusions({ "micrometer-core.jar", "spring-boot-actuator-*.jar",
-		"spring-boot-actuator-autoconfigure-*.jar" })
+import java.time.Duration;
+
+@ClassPathExclusions({"micrometer-core.jar", "spring-boot-actuator-*.jar",
+		"spring-boot-actuator-autoconfigure-*.jar"})
 @DirtiesContext
 public class GatewaySampleApplicationWithoutMetricsTests {
+	/**
+	 * 模拟 actuator metrics 端点的返回值
+	 */
+	public static final String HELLO_FROM_FAKE_ACTUATOR_METRICS_GATEWAY_REQUESTS =
+			"hello from fake /actuator/metrics/spring.cloud.gateway.requests";
+
 
 	static protected int port;
 
@@ -62,8 +67,8 @@ public class GatewaySampleApplicationWithoutMetricsTests {
 
 	protected ConfigurableApplicationContext init(Class<?> config) {
 		return new SpringApplicationBuilder().web(WebApplicationType.REACTIVE)
-			.sources(GatewaySampleApplication.class, config)
-			.run();
+				.sources(GatewaySampleApplication.class, config)
+				.run();
 	}
 
 	@Test
@@ -71,12 +76,12 @@ public class GatewaySampleApplicationWithoutMetricsTests {
 		init(TestConfig.class);
 		webClient.get().uri("/get").exchange().expectStatus().isOk();
 		webClient.get()
-			.uri("http://localhost:" + port + "/actuator/metrics/spring.cloud.gateway.requests")
-			.exchange()
-			.expectStatus()
-			.isOk()
-			.expectBody(String.class)
-			.isEqualTo(GatewaySampleApplication.HELLO_FROM_FAKE_ACTUATOR_METRICS_GATEWAY_REQUESTS);
+				.uri("http://localhost:" + port + "/actuator/metrics/spring.cloud.gateway.requests")
+				.exchange()
+				.expectStatus()
+				.isOk()
+				.expectBody(String.class)
+				.isEqualTo(HELLO_FROM_FAKE_ACTUATOR_METRICS_GATEWAY_REQUESTS);
 	}
 
 }

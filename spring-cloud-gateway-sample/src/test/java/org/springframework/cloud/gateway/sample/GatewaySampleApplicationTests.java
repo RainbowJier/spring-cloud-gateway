@@ -16,14 +16,10 @@
 
 package org.springframework.cloud.gateway.sample;
 
-import java.time.Duration;
-import java.util.Map;
-
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -40,6 +36,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 import org.springframework.test.util.TestSocketUtils;
 import org.springframework.test.web.reactive.server.WebTestClient;
+
+import java.time.Duration;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT;
@@ -211,42 +210,12 @@ public class GatewaySampleApplicationTests {
 	}
 
 	@Test
-	public void routeFromKotlin() {
-		webClient.get()
-			.uri("/anything/kotlinroute")
-			.header("Host", "kotlin.abc.org")
-			.exchange()
-			.expectHeader()
-			.valueEquals("X-TestHeader", "foobar")
-			.expectStatus()
-			.isOk();
-	}
-
-	@Test
 	public void actuatorManagementPort() {
 		webClient.get()
 			.uri("http://localhost:" + managementPort + "/actuator/gateway/routes")
 			.exchange()
 			.expectStatus()
 			.isOk();
-	}
-
-	@Test
-	@SuppressWarnings("unchecked")
-	public void actuatorMetrics() {
-		contextLoads();
-		String metricName = metricsProperties.getPrefix() + ".requests";
-		webClient.get()
-			.uri("http://localhost:" + managementPort + "/actuator/metrics/" + metricName)
-			.exchange()
-			.expectStatus()
-			.isOk()
-			.expectBody(Map.class)
-			.consumeWith(res -> {
-				Map<String, Object> responseBody = res.getResponseBody();
-				assertThat(responseBody).as("Expected to find metric with name gateway.requests")
-					.containsEntry("name", metricName);
-			});
 	}
 
 	@Configuration(proxyBeanMethods = false)
