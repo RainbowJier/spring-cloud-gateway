@@ -19,15 +19,12 @@ package org.springframework.cloud.gateway.sample;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+
 /**
  * Spring Cloud Gateway 示例应用
  *
- * <p>演示功能：
- * - 基础路由配置（Host、Path 谓词）
- * - 请求体读取和修改
- * - 响应体修改
- * - 自定义过滤器（限流）
- * - RouterFunction 端点
+ * <p>
+ * 演示功能： - 基础路由配置（Host、Path 谓词） - 请求体读取和修改 - 响应体修改 - 自定义过滤器（限流） - RouterFunction 端点
  *
  * @author Spencer Gibb
  */

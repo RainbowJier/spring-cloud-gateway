@@ -34,20 +34,22 @@ import java.util.concurrent.TimeUnit;
 /**
  * Rate Limiting Filter - Token Bucket Algorithm
  *
- * <p>Functionality:
- * Implements request rate limiting using the token bucket algorithm to prevent system overload.
+ * <p>
+ * Functionality: Implements request rate limiting using the token bucket algorithm to
+ * prevent system overload.
  *
- * <p>Token Bucket Algorithm:
+ * <p>
+ * Token Bucket Algorithm:
  * <ul>
- *   <li>Bucket has a fixed capacity of tokens</li>
- *   <li>Tokens are refilled at a fixed rate</li>
- *   <li>When a request arrives, it tries to consume a token</li>
- *   <li>Token available: request is allowed</li>
- *   <li>No token available: request is rejected with 429 error</li>
+ * <li>Bucket has a fixed capacity of tokens</li>
+ * <li>Tokens are refilled at a fixed rate</li>
+ * <li>When a request arrives, it tries to consume a token</li>
+ * <li>Token available: request is allowed</li>
+ * <li>No token available: request is rejected with 429 error</li>
  * </ul>
  *
- * <p>Usage Example:
- * <pre>{@code
+ * <p>
+ * Usage Example: <pre>{@code
  * new ThrottleGatewayFilter()
  *     .setCapacity(10)              // Bucket capacity: 10 tokens
  *     .setRefillTokens(1)           // Tokens per refill: 1
@@ -55,7 +57,8 @@ import java.util.concurrent.TimeUnit;
  *     .setRefillUnit(TimeUnit.SECONDS)  // Time unit: seconds
  * }</pre>
  *
- * <p>Reference: https://github.com/bbeck/token-bucket
+ * <p>
+ * Reference: https://github.com/bbeck/token-bucket
  *
  * @author Spencer Gibb
  */
@@ -83,13 +86,14 @@ public class ThrottleGatewayFilter implements GatewayFilter {
 	/**
 	 * Get token bucket instance (double-checked locking)
 	 *
-	 * <p>Implementation Details:
+	 * <p>
+	 * Implementation Details:
 	 * <ul>
-	 *   <li>First check: lock-free, fast return for existing instance</li>
-	 *   <li>Lock & create: ensures thread safety</li>
-	 *   <li>Second check: prevents multiple creation (other thread may have created while waiting)</li>
+	 * <li>First check: lock-free, fast return for existing instance</li>
+	 * <li>Lock & create: ensures thread safety</li>
+	 * <li>Second check: prevents multiple creation (other thread may have created while
+	 * waiting)</li>
 	 * </ul>
-	 *
 	 * @return TokenBucket instance
 	 */
 	private TokenBucket getTokenBucket() {
@@ -103,13 +107,13 @@ public class ThrottleGatewayFilter implements GatewayFilter {
 			// Second check: prevent creating another instance while waiting for lock
 			if (tokenBucket == null) {
 				tokenBucket = TokenBuckets.builder()
-						.withCapacity(capacity)  // Set bucket capacity
-						.withFixedIntervalRefillStrategy(
-								refillTokens,    // Tokens to add per refill
-								refillPeriod,    // Refill interval
-								refillUnit       // Time unit
-						)
-						.build();
+					.withCapacity(capacity) // Set bucket capacity
+					.withFixedIntervalRefillStrategy(refillTokens, // Tokens to add per
+																	// refill
+							refillPeriod, // Refill interval
+							refillUnit // Time unit
+					)
+					.build();
 			}
 		}
 		return tokenBucket;
@@ -118,14 +122,14 @@ public class ThrottleGatewayFilter implements GatewayFilter {
 	/**
 	 * Filter request - implements rate limiting logic
 	 *
-	 * <p>Processing Flow:
+	 * <p>
+	 * Processing Flow:
 	 * <ol>
-	 *   <li>Get token bucket instance</li>
-	 *   <li>Try to consume a token (tryConsume)</li>
-	 *   <li>Success: continue processing request</li>
-	 *   <li>Failure: return 429 TOO_MANY_REQUESTS</li>
+	 * <li>Get token bucket instance</li>
+	 * <li>Try to consume a token (tryConsume)</li>
+	 * <li>Success: continue processing request</li>
+	 * <li>Failure: return 429 TOO_MANY_REQUESTS</li>
 	 * </ol>
-	 *
 	 * @param exchange current request exchange object
 	 * @param chain filter chain
 	 * @return async completion signal
@@ -137,7 +141,8 @@ public class ThrottleGatewayFilter implements GatewayFilter {
 
 		// TODO: Could be extended to use different buckets per key
 		// For example: by IP, user ID, API Key, etc. for granular rate limiting
-		// TokenBucket tokenBucket = getTokenBucketForKey(exchange.getRequest().getRemoteAddress());
+		// TokenBucket tokenBucket =
+		// getTokenBucketForKey(exchange.getRequest().getRemoteAddress());
 
 		if (log.isDebugEnabled()) {
 			log.debug("TokenBucket capacity: " + tokenBucket.getCapacity());

@@ -2,6 +2,8 @@
 
 本指南将帮助你逐步深入理解 Spring Cloud Gateway 的示例模块。
 
+> **最新更新**: 本指南已根据代码重构后的最新状态更新（2026-02）
+
 ---
 
 ## 目录
@@ -23,24 +25,23 @@
 
 `spring-cloud-gateway-sample` 是 Spring Cloud Gateway 的**官方示例应用**，展示了：
 
-- 路由的多种定义方式（Java DSL、Kotlin DSL、YAML 配置）
-- 各种网关过滤器的使用
-- 自定义过滤器的实现
-- 请求/响应体的修改
-- 限流功能实现
+- Java DSL 路由定义方式
+- 自定义过滤器的实现（限流、计时）
+- 路由配置与主应用类的分离
+- 请求路径重写和头部修改
+- 响应式编程模式
 
 ### 1.2 技术栈
 
 | 技术 | 版本 | 用途 |
 |-----|------|-----|
 | Java | 17+ | 编程语言 |
-| Kotlin | - | 支持 Kotlin DSL 路由定义 |
 | Spring Boot | 3.x | 应用框架 |
 | Spring Cloud Gateway | 5.x | API 网关核心 |
 | WebFlux | - | 响应式 Web 框架 |
 | Lombok | - | 简化 Java 代码（生成 getter/setter/logger） |
 | token-bucket | 1.7 | 限流算法库 |
-| httpbin.org | - | 测试目标服务 |
+| jsonplaceholder.typicode.com | - | 测试目标服务 |
 
 ---
 
@@ -59,9 +60,6 @@ mvn -version
 ### 2.2 可选环境
 
 ```bash
-# 安装 wscat 用于 WebSocket 测试
-npm install -g wscat
-
 # 安装 curl 用于 HTTP 测试
 # Windows: 使用 PowerShell 自带的 Invoke-WebRequest 或安装 Git Bash
 ```
@@ -79,12 +77,13 @@ spring-cloud-gateway-sample/
 │   ├── main/
 │   │   ├── java/org/springframework/cloud/gateway/sample/
 │   │   │   ├── GatewaySampleApplication.java       # 主应用类 ⭐
-│   │   │   └── ThrottleGatewayFilter.java          # 自定义限流过滤器 ⭐
-│   │   ├── kotlin/org/springframework/cloud/gateway/sample/
-│   │   │   └── AdditionalRoutes.kt                 # Kotlin 路由定义 ⭐
+│   │   │   ├── config/
+│   │   │   │   └── RouteConfiguration.java         # 路由配置类 ⭐
+│   │   │   └── filter/
+│   │   │       ├── ThrottleGatewayFilter.java      # 自定义限流过滤器 ⭐
+│   │   │       └── TimingGatewayFilter.java        # 请求计时过滤器 ⭐
 │   │   └── resources/
-│   │       ├── application.yml                       # 主配置文件 ⭐
-│   │       └── application-secureheaders.yml         # 安全头配置
+│   │       └── application.yml                       # 主配置文件 ⭐
 │   └── test/
 │       └── java/org/springframework/cloud/gateway/sample/
 │           ├── GatewaySampleApplicationTests.java
@@ -158,16 +157,16 @@ curl http://localhost:8080/actuator/health
 # 查看网关请求指标（确认路由已加载）
 curl http://localhost:8080/actuator/metrics/spring.cloud.gateway.requests
 
-# 测试简单路由
-curl http://localhost:8080/testfun
+# 测试 API 代理路由
+curl http://localhost:8080/api/posts/1
 ```
 
 预期输出：
 - 健康检查返回 `{"status":"UP"}`
-- 请求指标显示已配置的路由（如 `routeId: default_path_to_httpbin`）
-- `/testfun` 返回 "hello"
+- `/api/posts/1` 返回 JSONPlaceholder 的测试数据
+- 响应头包含 `X-Gateway: SpringCloudGateway`
 
-> **注意**: Spring Cloud Gateway 5.x 版本中，`/actuator/gateway/routes` 端点可能不再可用或需要额外配置。请使用 metrics 端点或实际路由测试来验证。
+> **注意**: Spring Cloud Gateway 5.x 版本使用配置前缀 `spring.cloud.gateway.server.webflux` 而非旧版的 `spring.cloud.gateway`。
 
 ---
 
@@ -187,49 +186,28 @@ curl http://localhost:8080/testfun
   (URI: httpbin)         (Path, Host, Method)    (AddHeader, Rewrite)
 ```
 
-### 5.2 路由的三种定义方式
+### 5.2 路由的定义方式
 
-#### 方式 1: Java DSL (推荐)
+当前示例应用主要使用 **Java DSL** 方式定义路由，这是最灵活且推荐的方式。
 
 ```java
 @Bean
 public RouteLocator customRouteLocator(RouteLocatorBuilder builder) {
     return builder.routes()
-        .route(r -> r.host("**.abc.org")
-            .and().path("/anything/png")
-            .filters(f -> f.prefixPath("/httpbin"))
-            .uri("http://httpbin.org:80"))
+        .route(r -> r.path("/api/**")
+            .filters(f -> f.stripPrefix(1))
+            .uri("http://backend.com"))
         .build();
 }
 ```
 
-#### 方式 2: Kotlin DSL (更简洁)
+**其他方式（可选）**:
 
-```kotlin
-@Bean
-fun additionalRouteLocator(builder: RouteLocatorBuilder) = builder.routes {
-    route(id = "test-kotlin") {
-        host("kotlin.abc.org")
-        filters { prefixPath("/httpbin") }
-        uri(uri)
-    }
-}
-```
-
-#### 方式 3: YAML 配置
-
-```yaml
-spring:
-  cloud:
-    gateway:
-      routes:
-        - id: my_route
-          uri: http://httpbin.org:80
-          predicates:
-            - Path=/api/**
-          filters:
-            - PrefixPath=/httpbin
-```
+| 方式 | 优点 | 缺点 |
+|-----|------|-----|
+| Java DSL | 类型安全、IDE 友好、调试方便 | 需要重新编译 |
+| YAML 配置 | 配置即服务、易于动态刷新 | 缺少编译时检查 |
+| Kotlin DSL | 简洁优雅（示例中已移除） | 需要 Kotlin 环境 |
 
 ### 5.3 常用谓词（Predicates）
 
@@ -268,113 +246,115 @@ spring:
 ```java
 @SpringBootConfiguration    // 标识为 Spring Boot 配置类
 @EnableAutoConfiguration    // 启用自动配置
-@Import(AdditionalRoutes.class)  // 导入 Kotlin 路由配置
 ```
 
-#### 路由示例分析
+**说明**: 主应用类已简化为仅包含启动代码，路由配置已移至独立的 `RouteConfiguration` 类。这种分离符合关注点分离原则，使代码更易于维护。
 
-**示例 1: 基础路由（行 63-68）**
+---
+
+### 6.2 路由配置类 (RouteConfiguration.java)
+
+**文件位置**: `src/main/java/org/springframework/cloud/gateway/sample/config/RouteConfiguration.java`
+
+#### 类结构
 
 ```java
-.route(r -> r.host("**.abc.org").and().path("/anything/png")
-    .filters(f -> f.prefixPath("/httpbin")
-                    .addResponseHeader("X-TestHeader", "foobar"))
-    .uri(uri))
+@Configuration  // 标识为配置类
+public class RouteConfiguration {
+
+    @Value("${test.url}")
+    private String testUri;  // 从配置文件注入目标 URI
+
+    @Bean
+    public RouteLocator customRouteLocator(RouteLocatorBuilder builder) {
+        return builder.routes()
+            // 路由定义...
+            .build();
+    }
+}
+```
+
+#### 当前配置的路由
+
+**路由 1: 限流路由（行 50-61）**
+
+```java
+.route(r -> r
+    .order(-1)  // 高优先级
+    .path("/api/**")
+    .filters(f -> f.filter(
+        new ThrottleGatewayFilter()
+            .setCapacity(5)
+            .setRefillTokens(1)
+            .setRefillPeriod(10)
+            .setRefillUnit(TimeUnit.SECONDS)))
+    .uri(testUri)
+)
+```
+
+**限流参数**:
+- `capacity`: 5（桶容量）
+- `refillTokens`: 1（每次补充 1 个令牌）
+- `refillPeriod`: 10（每 10 秒）
+- `refillUnit`: SECONDS（秒）
+
+**效果**: 每 10 秒允许最多 5 个请求。
+
+**路由 2: 外部 API 代理路由（行 67-75）**
+
+```java
+.route(r -> r
+    .order(300)
+    .path("/api/**")
+    .filters(f -> f
+        .stripPrefix(1)  // 去掉 /api 前缀
+        .addRequestHeader("X-Proxy-By", "SpringGateway"))
+    .uri(testUri)
+)
 ```
 
 **工作流程**:
 
 ```
-请求: http://abc.org/anything/png
+请求: http://localhost:8080/api/posts/1
   ↓
-1. Host 谓词匹配: **.abc.org ✓
+1. Path 谓词匹配: /api/** ✓
   ↓
-2. Path 谓词匹配: /anything/png ✓
+2. 应用过滤器:
+   - stripPrefix(1) → /api/posts/1 变为 /posts/1
+   - addRequestHeader → 添加 X-Proxy-By: SpringGateway
   ↓
-3. 应用过滤器:
-   - prefixPath(/httpbin) → 路径变为 /httpbin/anything/png
-   - addResponseHeader → 添加 X-TestHeader: foobar
-  ↓
-4. 转发到: http://httpbin.org:80/httpbin/anything/png
+3. 转发到: https://jsonplaceholder.typicode.com/posts/1
 ```
 
-**示例 2: 请求体谓词（行 69-75）**
+**路由 3: 计时过滤器路由（行 78-81）**
 
 ```java
-.route("read_body_pred", r -> r.host("*.readbody.org")
-    .and().readBody(String.class, s -> s.trim().equalsIgnoreCase("hi"))
-    .filters(f -> f.prefixPath("/httpbin")
-                    .addResponseHeader("X-TestHeader", "read_body_pred"))
-    .uri(uri))
+.route(r -> r.path("/timing/**")
+    .filters(f -> f.filter(new TimingGatewayFilter()))
+    .uri("http://example.com")
+)
 ```
 
-**特点**: 读取请求体进行判断，只有内容为 "hi"（忽略大小写）才匹配。
+**功能**: 记录请求处理时间，用于性能监控。
 
-**示例 3: 请求体修改（行 76-84）**
+#### 待实现的路由（TODO 注释）
 
-```java
-.route("rewrite_request_obj", r -> r.host("*.rewriterequestobj.org")
-    .filters(f -> f.prefixPath("/httpbin")
-                    .addResponseHeader("X-TestHeader", "rewrite_request")
-                    .modifyRequestBody(String.class, Hello.class,
-                        MediaType.APPLICATION_JSON_VALUE,
-                        (exchange, s) -> {
-                            return Mono.just(new Hello(s.toUpperCase()));
-                        }))
-    .uri(uri))
-```
+代码中包含多个 `// todo:` 注释，标记了待实现的功能：
+- 基础路由：Host 谓词 + Path 谓词 + PrefixPath 过滤器
+- 请求体谓词：读取请求体内容进行匹配
+- 请求体修改：String → JSON
+- 响应体修改：String → String (转大写)
+- 响应体修改：处理空响应体
+- 响应体修改：错误供应商处理
+- 响应体修改：Map → String (提取特定字段)
+- 路径谓词：按路径匹配
 
-**转换流程**:
-
-```
-String 请求体 → 转大写 → Hello 对象 → JSON
-"hello"  →  "HELLO"  →  Hello("HELLO")  →  {"message":"HELLO"}
-```
-
-**示例 4: 响应体修改（行 94-101）**
-
-```java
-.route("rewrite_response_upper", r -> r.host("*.rewriteresponseupper.org")
-    .filters(f -> f.prefixPath("/httpbin")
-                    .addResponseHeader("X-TestHeader", "rewrite_response_upper")
-                    .modifyResponseBody(String.class, String.class,
-                        (exchange, s) -> {
-                            return Mono.just(s.toUpperCase());
-                        }))
-    .uri(uri))
-```
-
-**转换流程**:
-
-```
-上游响应 "hello world" → 转大写 → 返回给客户端 "HELLO WORLD"
-```
-
-**示例 5: 自定义限流过滤器（行 145-154）**
-
-```java
-.route(r -> r.order(-1)  // 高优先级
-    .host("**.throttle.org").and().path("/get")
-    .filters(f -> f.prefixPath("/httpbin")
-                    .filter(new ThrottleGatewayFilter()
-                        .setCapacity(1)
-                        .setRefillTokens(1)
-                        .setRefillPeriod(10)
-                        .setRefillUnit(TimeUnit.SECONDS)))
-    .uri(uri))
-```
-
-**限流参数**:
-- `capacity`: 1（桶容量）
-- `refillTokens`: 1（每次补充 1 个令牌）
-- `refillPeriod`: 10（每 10 秒）
-- `refillUnit`: SECONDS（秒）
-
-**效果**: 每 10 秒只允许 1 个请求。
+这些可以作为学习练习来实现。
 
 ---
 
-### 6.2 自定义过滤器 (ThrottleGatewayFilter.java)
+### 6.3 自定义限流过滤器 (ThrottleGatewayFilter.java)
 
 **文件位置**: `src/main/java/org/springframework/cloud/gateway/sample/ThrottleGatewayFilter.java`
 
@@ -499,230 +479,241 @@ new ThrottleGatewayFilter()
 
 ---
 
-### 6.3 Kotlin DSL 路由 (AdditionalRoutes.kt)
+### 6.4 请求计时过滤器 (TimingGatewayFilter.java)
 
-**文件位置**: `src/main/kotlin/org/springframework/cloud/gateway/sample/AdditionalRoutes.kt`
+**文件位置**: `src/main/java/org/springframework/cloud/gateway/sample/filter/TimingGatewayFilter.java`
 
 #### 完整代码
 
-```kotlin
-@Configuration(proxyBeanMethods = false)
-open class AdditionalRoutes {
-    @Value("\${test.uri:http://httpbin.org:80}")
-    var uri: String = ""
+```java
+@Slf4j  // Lombok: 自动生成 logger
+public class TimingGatewayFilter implements GatewayFilter {
 
-    @Bean
-    open fun additionalRouteLocator(builder: RouteLocatorBuilder) = builder.routes {
-        route(id = "test-kotlin") {
-            host("kotlin.abc.org") and path("/anything/kotlinroute")
-            filters {
-                prefixPath("/httpbin")
-                addResponseHeader("X-TestHeader", "foobar")
-            }
-            uri(uri)
-        }
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        long start = System.currentTimeMillis();
+
+        return chain.filter(exchange).doFinally(signalType -> {
+            long duration = System.currentTimeMillis() - start;
+            String path = exchange.getRequest().getPath().value();
+            String method = exchange.getRequest().getMethod().name();
+
+            log.info(String.format("[%s] %s completed in %dms", method, path, duration));
+        });
     }
 }
 ```
 
-#### Kotlin DSL 优势
+#### 工作原理
 
-| Java DSL | Kotlin DSL |
-|---------|-----------|
-| `r.host("**.abc.org").and().path("/png")` | `host("**.abc.org") and path("/png")` |
-| `.filters(f -> f.prefixPath("/http"))` | `filters { prefixPath("/http") }` |
-| 需要更多语法 | 更接近自然语言 |
+```
+┌──────────────────────────────────────────────────────────┐
+│  请求进入过滤器 → 记录开始时间 (start)                     │
+├──────────────────────────────────────────────────────────┤
+│  继续过滤器链 (chain.filter)                              │
+├──────────────────────────────────────────────────────────┤
+│  响应返回 → doFinally 触发 → 计算耗时并记录日志            │
+└──────────────────────────────────────────────────────────┘
+```
+
+#### 关键点
+
+1. **使用 `doFinally`**: 无论请求成功或失败，都会执行耗时计算
+2. **响应式编程**: 使用 `Mono<Void>` 返回类型，符合 WebFlux 规范
+3. **日志记录**: 输出 HTTP 方法、请求路径和处理耗时
+
+#### 日志示例
+
+```
+INFO: [GET] /api/posts/1 completed in 245ms
+INFO: [POST] /api/users completed in 512ms
+```
 
 ---
 
-### 6.4 配置文件分析
-
-#### application.yml
+### 6.5 配置文件分析
 
 **文件位置**: `src/main/resources/application.yml`
 
+#### 当前配置
+
 ```yaml
+# 测试 URI 配置（用于 RouteConfiguration.java）
 test:
-  uri: lb://httpbin  # 使用负载均衡
+  uri: https://jsonplaceholder.typicode.com
 
 spring:
+  jmx:
+    enabled: false  # 禁用 JMX，避免与 Netty 冲突
+
   cloud:
     gateway.server.webflux:
-      default-filters:      # 全局过滤器（应用于所有路由）
-      - PrefixPath=/httpbin
-      - AddResponseHeader=X-Response-Default-Foo, Default-Bar
+      # 默认过滤器：应用于所有路由
+      default-filters:
+        - AddResponseHeader=X-Gateway, SpringCloudGateway
+        - AddRequestHeader=X-Gateway-Request-Timestamp, ${java.time.Instant.now()}
 
-      routes:
-      # WebSocket 路由
-      - id: websocket_test
-        uri: ws://localhost:9000
-        order: 9000
-        predicates:
-        - Path=/echo
+# ============================================================================
+# 日志配置：开发环境使用 DEBUG/TRACE 级别
+# ============================================================================
+logging:
+  level:
+    org.springframework.cloud.gateway: TRACE
+    org.springframework.http.server.reactive: DEBUG
+    org.springframework.web.reactive: DEBUG
+    reactor.netty: DEBUG
 
-      # 默认路由（最低优先级）
-      - id: default_path_to_httpbin
-        uri: ${test.uri}
-        order: 10000
-        predicates:
-        - Path=/**
+# ============================================================================
+# Actuator 管理端点配置
+# 允许访问所有管理端点（生产环境应限制）
+# ============================================================================
+management.endpoints.web.exposure.include: '*'
 ```
 
-**配置要点**:
+#### 配置要点
 
-1. **default-filters**: 应用于所有路由的全局过滤器
-2. **order**: 数字越小优先级越高（-1 最高）
-3. **lb://**: 表示使用 Spring Cloud LoadBalancer
+1. **test.uri**: 目标服务地址，当前使用 JSONPlaceholder 测试 API
+2. **default-filters**: 应用于所有路由的全局过滤器
+   - 添加响应头 `X-Gateway: SpringCloudGateway`
+   - 添加请求时间戳头
+3. **JMX 禁用**: 避免与 Netty 的冲突
+4. **日志级别**: 开发环境使用 TRACE/DEBUG 级别
+5. **Actuator**: 暴露所有管理端点（生产环境应限制）
 
-#### application-secureheaders.yml
+#### 配置前缀变化
 
-展示了 **SecureHeaders** 过滤器的配置：
+Spring Cloud Gateway 5.x 使用新的配置前缀：
+- **旧版**: `spring.cloud.gateway`
+- **新版**: `spring.cloud.gateway.server.webflux`
 
-```yaml
-filters:
-  - name: SecureHeaders
-    args:
-      disable: x-frame-options       # 禁用某个头
-      enable: permissions-policy      # 启用某个头
-      permissions-policy: geolocation=("https://example.net")
-```
+这是为了支持 WebMVC 和 WebFlux 两种实现方式的区分。
 
 ---
 
 ## 7. 实践练习
 
-### 练习 1: 基础路由测试
+### 练习 1: API 代理路由测试
 
-**目标**: 理解 Host 谓词和路径前缀
+**目标**: 理解路径重写和代理功能
 
 ```bash
-# 测试 1: Host 匹配 + PrefixPath
-curl -H "Host: abc.org" http://localhost:8080/anything/png
+# 测试 1: StripPrefix 过滤器
+curl http://localhost:8080/api/posts/1
 
 # 预期结果:
-# - 请求被转发到 http://httpbin.org/httpbin/anything/png
-# - 响应头包含 X-TestHeader: foobar
+# - 请求被转发到 https://jsonplaceholder.typicode.com/posts/1
+# - /api 前缀被去除
+# - 响应头包含 X-Gateway: SpringCloudGateway
 ```
 
-**流程图**:
+**工作流程**:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  curl -H "Host: abc.org" http://localhost:8080/.../png  │
-└─────────────────────────────────────────────────────────┘
-                         │
-                         ↓
-         ┌───────────────────────────────┐
-         │  Route: **.abc.org 匹配 ✓    │
-         │  Path: /anything/png 匹配 ✓   │
-         └───────────────────────────────┘
-                         │
-                         ↓
-         ┌───────────────────────────────┐
-         │  Filters:                     │
-         │  1. prefixPath(/httpbin)      │
-         │     /anything/png             │
-         │     → /httpbin/anything/png   │
-         │  2. addResponseHeader         │
-         └───────────────────────────────┘
-                         │
-                         ↓
-         ┌───────────────────────────────┐
-         │  Forward to:                  │
-         │  http://httpbin.org:80        │
-         │  /httpbin/anything/png        │
-         └───────────────────────────────┘
+请求: http://localhost:8080/api/posts/1
+  ↓
+1. Path 谓词匹配: /api/** ✓
+  ↓
+2. 全局过滤器 (default-filters):
+   - 添加 X-Gateway 响应头
+   - 添加 X-Gateway-Request-Timestamp 请求头
+  ↓
+3. 路由过滤器:
+   - stripPrefix(1) → /api/posts/1 变为 /posts/1
+   - addRequestHeader(X-Proxy-By: SpringGateway)
+  ↓
+4. 转发到: https://jsonplaceholder.typicode.com/posts/1
 ```
 
 ---
 
-### 练习 2: 请求体修改测试
+### 练习 2: 限流过滤器测试
 
-**目标**: 理解请求体类型转换
+**目标**: 理解令牌桶限流算法
 
 ```bash
-# 测试 2: String → JSON 对象
-curl -X POST -H "Host: rewriterequestobj.org" \
-  -H "Content-Type: text/plain" \
-  -d "hello world" \
-  http://localhost:8080/anything
+# 测试 2: 快速发送多个请求
+for i in {1..6}; do
+  echo "Request $i:"
+  curl -w "\nHTTP Status: %{http_code}\n" http://localhost:8080/api/posts/1
+  sleep 0.5
+done
 
 # 预期结果:
-# - 请求体 "hello world" 被转换为 {"message":"HELLO WORLD"}
-# - Content-Type 变为 application/json
-```
-
----
-
-### 练习 3: 限流过滤器测试
-
-**目标**: 理解令牌桶算法
-
-```bash
-# 测试 3: 限流功能
-curl -H "Host: throttle.org" http://localhost:8080/get
-# 第 1 次: 200 OK ✓
-
-curl -H "Host: throttle.org" http://localhost:8080/get
-# 第 2 次（立即）: 429 Too Many Requests ✗
-
-# 等待 10 秒后重试
-sleep 10
-curl -H "Host: throttle.org" http://localhost:8080/get
-# 第 3 次: 200 OK ✓
+# - 前 5 个请求返回 200 OK
+# - 第 6 个请求返回 429 Too Many Requests
 ```
 
 **令牌消耗图**:
 
 ```
 令牌数
-  1 │  ●─────●─────●
-  0 │  └─●─┬─●─┬─●─┬─●
-    0s   5s    10s   15s    20s
-    ↑    ↑     ↑     ↑
-   请求 请求  等待  请求
-   1    2    10秒   3
-   ✓   ✗         ✓
+  5 │  ●●●●●─────●●●●●─────
+  4 │  ●●●●●─────●●●●●─────
+  3 │  ●●●●●─────●●●●●─────
+  2 │  ●●●●●─────●●●●●─────
+  1 │  ●●●●●─────●●●●●─────
+  0 │  └─●─┬─●─┬─●─┬─●─┬─●─┬
+    0s  1s  2s  3s  4s  5s  10s
+    ↑   ↑   ↑   ↑   ↑
+   请求 请求 请求 请求 请求
+   1-5  全部  消耗  令牌
+   ✓   (耗尽)      (补充后恢复)
 ```
 
 ---
 
-### 练习 4: WebSocket 路由
+### 练习 3: 计时过滤器测试
 
-**目标**: 理解 WebSocket 代理
+**目标**: 观察请求计时日志
 
 ```bash
-# 终端 1: 启动 WebSocket 服务器
-wscat --listen 9000
+# 测试 3: 发送请求并查看日志
+curl http://localhost:8080/timing/test
 
-# 终端 2: 通过网关连接
-wscat --connect ws://localhost:8080/echo
-
-# 现在终端 2 发送的消息会通过网关转发到终端 1
+# 在应用日志中查找:
+# INFO: [GET] /timing/test completed in XXXms
 ```
 
 ---
 
-### 练习 5: 路由优先级和查看指标
+### 练习 4: 查看网关指标
 
-**目标**: 理解 order 参数并查看路由信息
+**目标**: 理解路由优先级和监控指标
 
 ```bash
-# 查看网关请求指标（包含路由 ID 信息）
+# 查看网关请求指标
 curl http://localhost:8080/actuator/metrics/spring.cloud.gateway.requests | jq
+
+# 查看健康状态
+curl http://localhost:8080/actuator/health | jq
 
 # 查看所有可用的 actuator 端点
 curl http://localhost:8080/actuator | jq
 ```
 
 **观察要点**:
-- order=-1 的路由优先级最高（限流路由）
-- order=10000 的路由优先级最低（默认路由）
-- 指标中包含 `routeId` 标签，显示哪些路由被访问
+- order=-1 的限流路由会优先执行
+- order=300 的 API 代理路由处理正常请求
+- order 越小，优先级越高
 
-**路由优先级参考**:
-- 限流路由: `order=-1` (最高优先级)
-- 默认路由: `order=10000` (最低优先级)
+---
+
+### 练习 5: 实现自定义路由（TODO 练习）
+
+**目标**: 根据代码中的 TODO 注释实现新的路由
+
+参考 `RouteConfiguration.java` 中的 TODO 列表：
+
+1. **基础路由**: Host 谓词 + Path 谓词 + PrefixPath 过滤器
+2. **请求体谓词**: 读取请求体内容进行匹配
+3. **请求体修改**: String → JSON 对象转换
+4. **响应体修改**: String → String (转大写)
+5. **响应体修改**: 处理空响应体场景
+
+**实现提示**:
+- 使用 `RouteLocatorBuilder` 构建路由
+- 参考 `ThrottleGatewayFilter` 和 `TimingGatewayFilter` 实现自定义过滤器
+- 使用 `@Slf4j` 和 Lombok 注解简化代码
 
 ---
 
@@ -895,15 +886,13 @@ curl http://localhost:8080/actuator/metrics
 - Predicate（谓词/匹配条件）
 - Filter（过滤器）
 
-✅ **三种路由定义方式**:
-- Java DSL
-- Kotlin DSL
-- YAML 配置
+✅ **路由定义方式**:
+- Java DSL（主要方式）
+- YAML 配置（可选）
 
 ✅ **核心过滤器**:
-- 路径修改（PrefixPath、StripPrefix、RewritePath）
+- 路径修改（StripPrefix、RewritePath）
 - 头部操作（AddRequestHeader、AddResponseHeader）
-- 请求/响应体修改（modifyRequestBody、modifyResponseBody）
 
 ✅ **自定义过滤器**:
 - 实现 `GatewayFilter` 接口
@@ -911,15 +900,22 @@ curl http://localhost:8080/actuator/metrics
 - 响应式编程模式
 - 使用 Lombok 简化代码（@Slf4j、@Data、@Accessors）
 
-✅ **高级功能**:
-- 限流（令牌桶算法）
-- 熔断（Resilience4J）
-- 服务发现
-- WebSocket 代理
+✅ **当前示例功能**:
+- 限流过滤器（ThrottleGatewayFilter）- 令牌桶算法
+- 计时过滤器（TimingGatewayFilter）- 请求耗时记录
+- API 代理路由 - 路径重写和头部修改
+- 配置与代码分离设计
 
 ✅ **开发工具**:
 - Lombok 注解减少样板代码
 - Maven 注解处理器配置
+- Actuator 监控端点
+
+✅ **架构变化**（5.x 版本）:
+- 配置前缀从 `spring.cloud.gateway` 改为 `spring.cloud.gateway.server.webflux`
+- 主应用类简化，路由配置独立到 `RouteConfiguration`
+- 移除 Kotlin DSL 示例
+- 使用 JSONPlaceholder 替代 httpbin.org 作为测试服务
 
 ---
 

@@ -16,232 +16,119 @@
 
 package org.springframework.cloud.gateway.sample;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.cloud.client.DefaultServiceInstance;
-import org.springframework.cloud.gateway.config.GatewayMetricsProperties;
-import org.springframework.cloud.gateway.test.HttpBinCompatibleController;
-import org.springframework.cloud.loadbalancer.annotation.LoadBalancerClient;
-import org.springframework.cloud.loadbalancer.core.ServiceInstanceListSupplier;
-import org.springframework.cloud.loadbalancer.support.ServiceInstanceListSuppliers;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
-import org.springframework.core.env.Environment;
-import org.springframework.test.util.TestSocketUtils;
+import org.springframework.context.ApplicationContext;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
-import java.time.Duration;
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT;
 
 /**
- * @author Spencer Gibb
+ * 集成测试：验证 Spring Cloud Gateway 示例应用的基本功能
+ *
+ * <p>
+ * 测试范围：
+ * <ul>
+ * <li>应用上下文加载</li>
+ * <li>API 代理路由功能</li>
+ * <li>健康检查端点</li>
+ * <li>响应头验证</li>
+ * </ul>
+ *
+ * @author Test Author
  */
-@SpringBootTest(classes = { GatewaySampleApplicationTests.TestConfig.class }, webEnvironment = RANDOM_PORT,
-		properties = { "management.endpoint.gateway.enabled=true", "management.server.port=${test.port}" })
-public class GatewaySampleApplicationTests {
-
-	protected static int managementPort;
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
+class GatewaySampleApplicationTests {
 
 	@Autowired
-	GatewayMetricsProperties metricsProperties;
+	private WebTestClient webTestClient;
 
-	@LocalServerPort
-	protected int port = 0;
+	@Autowired
+	private ApplicationContext applicationContext;
 
-	protected WebTestClient webClient;
-
-	protected String baseUri;
-
-	@BeforeAll
-	public static void beforeClass() {
-		managementPort = TestSocketUtils.findAvailableTcpPort();
-
-		System.setProperty("test.port", String.valueOf(managementPort));
-	}
-
-	@AfterAll
-	public static void afterClass() {
-		System.clearProperty("test.port");
-	}
-
-	@BeforeEach
-	public void setup() {
-		baseUri = "http://localhost:" + port;
-		this.webClient = WebTestClient.bindToServer().responseTimeout(Duration.ofSeconds(10)).baseUrl(baseUri).build();
+	@Test
+	void contextLoads() {
+		// 验证 Spring 上下文能够成功加载
+		assertThat(applicationContext).isNotNull();
+		assertThat(webTestClient).isNotNull();
 	}
 
 	@Test
-	public void contextLoads() {
-		webClient.get().uri("/get").exchange().expectStatus().isOk();
-	}
-
-	@Test
-	@SuppressWarnings("unchecked")
-	public void readBodyPredicateStringWorks() {
-		webClient.post()
-			.uri("/post")
-			.header("Host", "www.readbody.org")
-			.bodyValue("hi")
+	void healthEndpointReturnsUp() {
+		// 测试健康检查端点
+		webTestClient.get()
+			.uri("/actuator/health")
 			.exchange()
 			.expectStatus()
 			.isOk()
-			.expectHeader()
-			.valueEquals("X-TestHeader", "read_body_pred")
-			.expectBody(Map.class)
-			.consumeWith(result -> assertThat(result.getResponseBody()).containsEntry("data", "hi"));
-	}
-
-	@Test
-	@SuppressWarnings("unchecked")
-	public void rewriteRequestBodyStringWorks() {
-		webClient.post()
-			.uri("/post")
-			.header("Host", "www.rewriterequestupper.org")
-			.bodyValue("hello")
-			.exchange()
-			.expectStatus()
-			.isOk()
-			.expectHeader()
-			.valueEquals("X-TestHeader", "rewrite_request_upper")
-			.expectBody(Map.class)
-			.consumeWith(result -> assertThat(result.getResponseBody()).containsEntry("data", "HELLOHELLO"));
-	}
-
-	@Test
-	@SuppressWarnings("unchecked")
-	public void rewriteRequestBodyObjectWorks() {
-		webClient.post()
-			.uri("/post")
-			.header("Host", "www.rewriterequestobj.org")
-			.bodyValue("hello")
-			.exchange()
-			.expectStatus()
-			.isOk()
-			.expectHeader()
-			.valueEquals("X-TestHeader", "rewrite_request")
-			.expectBody(Map.class)
-			.consumeWith(
-					result -> assertThat(result.getResponseBody()).containsEntry("data", "{\"message\":\"HELLO\"}"));
-	}
-
-	@Test
-	@SuppressWarnings("unchecked")
-	public void rewriteResponseBodyStringWorks() {
-		webClient.post()
-			.uri("/post")
-			.header("Host", "www.rewriteresponseupper.org")
-			.bodyValue("hello")
-			.exchange()
-			.expectStatus()
-			.isOk()
-			.expectHeader()
-			.valueEquals("X-TestHeader", "rewrite_response_upper")
-			.expectBody(Map.class)
-			.consumeWith(result -> assertThat(result.getResponseBody()).containsEntry("DATA", "HELLO"));
-	}
-
-	@Test
-	@SuppressWarnings("unchecked")
-	public void rewriteResponseEmptyBodyToStringWorks() {
-		webClient.post()
-			.uri("/post/empty")
-			.header("Host", "www.rewriteemptyresponse.org")
-			.exchange()
-			.expectStatus()
-			.isOk()
-			.expectHeader()
-			.valueEquals("X-TestHeader", "rewrite_empty_response")
 			.expectBody(String.class)
-			.consumeWith(result -> assertThat(result.getResponseBody()).isEqualTo("emptybody"));
+			.value(body -> assertThat(body).contains("UP"));
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
-	public void emptyBodySupplierNotCalledWhenBodyPresent() {
-		webClient.post()
-			.uri("/post")
-			.header("Host", "www.rewriteresponsewithfailsupplier.org")
-			.bodyValue("hello")
+	void apiProxyRouteWorks() {
+		// 测试 API 代理路由：/api/posts/1 -> JSONPlaceholder /posts/1
+		webTestClient.get()
+			.uri("/api/posts/1")
 			.exchange()
 			.expectStatus()
 			.isOk()
-			.expectHeader()
-			.valueEquals("X-TestHeader", "rewrite_response_fail_supplier")
-			.expectBody(Map.class)
-			.consumeWith(result -> assertThat(result.getResponseBody()).containsEntry("DATA", "HELLO"));
-	}
-
-	@Test
-	@SuppressWarnings("unchecked")
-	public void rewriteResponeBodyObjectWorks() {
-		webClient.post()
-			.uri("/post")
-			.header("Host", "www.rewriteresponseobj.org")
-			.bodyValue("hello")
-			.exchange()
-			.expectStatus()
-			.isOk()
-			.expectHeader()
-			.valueEquals("X-TestHeader", "rewrite_response_obj")
 			.expectBody(String.class)
-			.consumeWith(result -> assertThat(result.getResponseBody()).isEqualTo("hello"));
+			.value(body -> {
+				assertThat(body).contains("userId");
+				assertThat(body).contains("id");
+				assertThat(body).contains("title");
+			});
 	}
 
 	@Test
-	public void complexPredicate() {
-		webClient.get()
-			.uri("/anything/png")
-			.header("Host", "www.abc.org")
+	void gatewayResponseHeaderIsAdded() {
+		// 验证全局响应头 X-Gateway 被正确添加
+		webTestClient.get()
+			.uri("/api/posts/1")
 			.exchange()
+			.expectStatus()
+			.isOk()
 			.expectHeader()
-			.valueEquals("X-TestHeader", "foobar")
-			.expectStatus()
-			.isOk();
+			.valueEquals("X-Gateway", "SpringCloudGateway");
 	}
 
 	@Test
-	public void actuatorManagementPort() {
-		webClient.get()
-			.uri("http://localhost:" + managementPort + "/actuator/gateway/routes")
+	void stripPrefixFilterRemovesApiPrefix() {
+		// 验证 StripPrefix(1) 过滤器去除了 /api 前缀
+		// 请求 /api/posts 应该被转发到 /posts
+		webTestClient.get()
+			.uri("/api/posts")
 			.exchange()
 			.expectStatus()
-			.isOk();
+			.isOk()
+			.expectBody(String.class)
+			.value(body -> assertThat(body).contains("["));
 	}
 
-	@Configuration(proxyBeanMethods = false)
-	@EnableAutoConfiguration
-	@LoadBalancerClient(name = "httpbin", configuration = LoadBalancerConfig.class)
-	@Import(GatewaySampleApplication.class)
-	protected static class TestConfig {
-
-		@Bean
-		public HttpBinCompatibleController httpBinCompatibleController() {
-			return new HttpBinCompatibleController();
-		}
-
+	@Test
+	void actuatorEndpointsAreAccessible() {
+		// 验证 Actuator 端点可访问
+		webTestClient.get()
+			.uri("/actuator")
+			.exchange()
+			.expectStatus()
+			.isOk()
+			.expectBody(String.class)
+			.value(body -> assertThat(body).contains("_links"));
 	}
 
-	protected static class LoadBalancerConfig {
-
-		@LocalServerPort
-		int port;
-
-		@Bean
-		public ServiceInstanceListSupplier fixedServiceInstanceListSupplier(Environment env) {
-			return ServiceInstanceListSuppliers.from("httpbin",
-					new DefaultServiceInstance("httpbin-1", "httpbin", "localhost", port, false));
-		}
-
+	@Test
+	void actuatorEndpointsContainsHealthLink() {
+		// 验证 Actuator 端点包含健康检查链接
+		webTestClient.get().uri("/actuator").exchange().expectStatus().isOk().expectBody(String.class).value(body -> {
+			assertThat(body).contains("/actuator/health");
+			assertThat(body).contains("href");
+		});
 	}
 
 }
