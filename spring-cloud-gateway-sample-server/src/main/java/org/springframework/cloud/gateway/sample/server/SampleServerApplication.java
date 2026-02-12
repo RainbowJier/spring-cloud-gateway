@@ -14,28 +14,33 @@
  * limitations under the License.
  */
 
-package org.springframework.cloud.gateway.sample;
+package org.springframework.cloud.gateway.sample.server;
 
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
-import org.springframework.context.annotation.ComponentScan;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Spring Cloud Gateway 示例应用
+ * Sample Backend Server Application
  *
  * <p>
- * 演示功能： - 基础路由配置（Host、Path 谓词） - 请求体读取和修改 - 响应体修改 - 自定义过滤器（限流） - RouterFunction 端点
+ * This is a backend service for testing Spring Cloud Gateway features.
+ * It runs on port 8081 and provides various test endpoints.
  *
- * @author Spencer Gibb
+ * <p>
+ * Features:
+ * <ul>
+ * <li>Normal responses for basic forwarding tests</li>
+ * <li>Slow responses for timeout/circuit breaker tests</li>
+ * <li>Error responses for failure handling tests</li>
+ * <li>Random success/failure for intermittent failure scenarios</li>
+ * </ul>
+ *
+ * @author Frank
  */
-@SpringBootConfiguration
-@EnableAutoConfiguration
-@ComponentScan
-public class GatewaySampleApplication {
+@SpringBootApplication
+public class SampleServerApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(GatewaySampleApplication.class, args);
+		SpringApplication.run(SampleServerApplication.class, args);
 	}
-
 }
