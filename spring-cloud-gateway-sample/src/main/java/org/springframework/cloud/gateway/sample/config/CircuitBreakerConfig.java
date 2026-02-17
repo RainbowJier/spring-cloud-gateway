@@ -58,40 +58,37 @@ public class CircuitBreakerConfig {
 	 * <p>
 	 * Called when downstream service is unavailable or circuit breaker is open.
 	 *
+	 * <p>
+	 * Circuit Breaker States:
+	 * <ul>
+	 * <li>CLOSED: Normal operation, requests pass through</li>
+	 * <li>OPEN: Circuit is tripped, fallback is triggered immediately</li>
+	 * <li>HALF_OPEN: Testing if downstream service has recovered</li>
+	 * </ul>
+	 *
+	 * <p>
+	 * Usage Example: <pre>{@code
+	 * # In route configuration:
+	 * filters:
+	 *   - name: CircuitBreaker
+	 *     args:
+	 *       name: myCircuitBreaker
+	 *       fallbackUri: forward:/fallback
+	 * }</pre>
+	 *
 	 * @return JSON response with fallback information
 	 */
 	@RequestMapping("/fallback")
 	public Mono<Map<String, Object>> fallback() {
 		log.warn("Circuit breaker triggered! Returning fallback response.");
 
-		Map<String, Object> fallbackResponse = new HashMap<>();
-		fallbackResponse.put("status", "error");
-		fallbackResponse.put("message", "Service temporarily unavailable. Please try again later.");
-		fallbackResponse.put("timestamp", System.currentTimeMillis());
-		fallbackResponse.put("code", 503);
+		Map<String, Object> result = new HashMap<>();
+		result.put("status", "error");
+		result.put("message", "Service temporarily unavailable. Please try again later.");
+		result.put("timestamp", System.currentTimeMillis());
+		result.put("code", 503);
 
-		return Mono.just(fallbackResponse);
-	}
-
-	/**
-	 * Fallback endpoint for rate limiting
-	 *
-	 * <p>
-	 * Called when request rate limit is exceeded.
-	 *
-	 * @return JSON response with rate limit information
-	 */
-	@RequestMapping("/rateLimitFallback")
-	public Mono<Map<String, Object>> rateLimitFallback() {
-		log.warn("Rate limit exceeded! Returning fallback response.");
-
-		Map<String, Object> fallbackResponse = new HashMap<>();
-		fallbackResponse.put("status", "error");
-		fallbackResponse.put("message", "Too many requests. Please slow down.");
-		fallbackResponse.put("timestamp", System.currentTimeMillis());
-		fallbackResponse.put("code", 429);
-
-		return Mono.just(fallbackResponse);
+		return Mono.just(result);
 	}
 
 }

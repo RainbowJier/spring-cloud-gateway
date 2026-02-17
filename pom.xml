@@ -159,7 +159,6 @@
 		<module>spring-cloud-starter-gateway-server-webflux</module>
 		<module>spring-cloud-gateway-sample</module>
 		<module>spring-cloud-gateway-sample-server</module>
-		<module>spring-cloud-gateway-integration-tests</module>
 		<module>docs</module>
 	</modules>
 

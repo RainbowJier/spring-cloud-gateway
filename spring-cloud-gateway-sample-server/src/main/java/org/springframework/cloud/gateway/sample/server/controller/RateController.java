@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.springframework.cloud.gateway.sample.server;
+package org.springframework.cloud.gateway.sample.server.controller;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -56,7 +56,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 @RestController
 @RequestMapping("/test")
-public class TestController {
+public class RateController {
 
 	private final AtomicInteger requestCounter = new AtomicInteger(0);
 
@@ -82,64 +82,59 @@ public class TestController {
 		return Mono.just(response);
 	}
 
+
 	/**
-	 * Slow response test - simulates slow backend service
+	 * Slow response test - simulates a slow backend service
 	 *
 	 * <p>
 	 * Use this to test circuit breaker timeout functionality.
-	 * When delay exceeds the configured timeout, circuit breaker should trigger.
+	 * Rapid requests will cause the circuit breaker to trip.
 	 *
-	 * @param delay delay in milliseconds (default: 100ms)
-	 * @return JSON response after specified delay
+	 * @param delay delay in milliseconds (default: 3000)
+	 * @return JSON response after delay
 	 */
 	@GetMapping("/slow")
-	public Mono<Map<String, Object>> slow(@RequestParam(defaultValue = "100") long delay) {
+	public Mono<Map<String, Object>> slow(@RequestParam(defaultValue = "3000") long delay) {
 		int requestId = requestCounter.incrementAndGet();
-		log.info("[Request #{}] Slow request received, delay: {}ms", requestId, delay);
+		log.info("[Request #{}] Slow request received, delaying {}ms", requestId, delay);
 
 		return Mono.delay(Duration.ofMillis(delay))
-				.then(Mono.fromSupplier(() -> {
-					Map<String, Object> response = new HashMap<>();
-					response.put("status", "success");
-					response.put("message", "Slow response completed");
-					response.put("requestId", requestId);
-					response.put("delay", delay);
-					response.put("timestamp", System.currentTimeMillis());
-					return response;
-				}));
+			.then(Mono.fromSupplier(() -> {
+				Map<String, Object> response = new HashMap<>();
+				response.put("status", "success");
+				response.put("message", "Slow response completed!");
+				response.put("requestId", requestId);
+				response.put("delay", delay);
+				response.put("timestamp", System.currentTimeMillis());
+				return response;
+			}));
 	}
 
 	/**
-	 * Error response test - simulates failing backend service
+	 * Error response test - simulates a failing backend service
 	 *
 	 * <p>
 	 * Use this to test circuit breaker error handling.
-	 * Multiple consecutive errors should trigger the circuit breaker.
+	 * Multiple failed requests will trip the circuit breaker.
 	 *
-	 * @return JSON error response
+	 * @return Always returns 500 error
 	 */
 	@GetMapping("/error")
 	public Mono<Map<String, Object>> error() {
 		int requestId = requestCounter.incrementAndGet();
-		log.error("[Request #{}] Error request received - simulating failure", requestId);
+		log.warn("[Request #{}] Error request received, returning 500", requestId);
 
-		Map<String, Object> response = new HashMap<>();
-		response.put("status", "error");
-		response.put("message", "Simulated backend service failure!");
-		response.put("requestId", requestId);
-		response.put("timestamp", System.currentTimeMillis());
-
-		return Mono.just(response);
+		return Mono.error(new RuntimeException("Simulated backend service error!"));
 	}
 
 	/**
-	 * Random error test - randomly returns success or error
+	 * Random error test - simulates intermittent failures
 	 *
 	 * <p>
-	 * Use this to test circuit breaker with intermittent failures.
-	 * The failure rate is approximately 50%.
+	 * Use this to test circuit breaker behavior with unstable services.
+	 * 50% chance of success, 50% chance of failure.
 	 *
-	 * @return JSON response (success or error)
+	 * @return Random success or error response
 	 */
 	@GetMapping("/random")
 	public Mono<Map<String, Object>> random() {
@@ -147,52 +142,36 @@ public class TestController {
 		boolean shouldFail = Math.random() < 0.5;
 
 		if (shouldFail) {
-			log.warn("[Request #{}] Random request - FAILING", requestId);
-			Map<String, Object> response = new HashMap<>();
-			response.put("status", "error");
-			response.put("message", "Random failure occurred");
-			response.put("requestId", requestId);
-			response.put("timestamp", System.currentTimeMillis());
-			return Mono.just(response);
-		} else {
-			log.info("[Request #{}] Random request - SUCCESS", requestId);
-			Map<String, Object> response = new HashMap<>();
-			response.put("status", "success");
-			response.put("message", "Random success");
-			response.put("requestId", requestId);
-			response.put("timestamp", System.currentTimeMillis());
-			return Mono.just(response);
+			log.warn("[Request #{}] Random request FAILED", requestId);
+			return Mono.error(new RuntimeException("Random failure occurred!"));
 		}
+
+		log.info("[Request #{}] Random request SUCCEEDED", requestId);
+		Map<String, Object> response = new HashMap<>();
+		response.put("status", "success");
+		response.put("message", "Random request succeeded!");
+		response.put("requestId", requestId);
+		response.put("timestamp", System.currentTimeMillis());
+
+		return Mono.just(response);
 	}
 
 	/**
-	 * Timeout test - simulates backend service that times out
+	 * Timeout test - simulates a backend that never responds
 	 *
 	 * <p>
-	 * Use this to test circuit breaker timeout behavior.
-	 * Default delay is 5 seconds, which exceeds typical timeout configurations.
+	 * Use this to test gateway timeout handling.
+	 * This endpoint will wait indefinitely (or very long time).
 	 *
-	 * @param delay delay in milliseconds (default: 5000ms)
-	 * @return JSON response after delay (or timeout)
+	 * @return Never returns (causes timeout)
 	 */
 	@GetMapping("/timeout")
-	public Mono<Map<String, Object>> timeout(@RequestParam(defaultValue = "5000") long delay) {
+	public Mono<Map<String, Object>> timeout() {
 		int requestId = requestCounter.incrementAndGet();
-		log.warn("[Request #{}] Timeout test initiated, delay: {}ms", requestId, delay);
+		log.warn("[Request #{}] Timeout request received, will hang forever", requestId);
 
-		return Mono.delay(Duration.ofMillis(delay))
-				.then(Mono.fromSupplier(() -> {
-					Map<String, Object> response = new HashMap<>();
-					response.put("status", "success");
-					response.put("message", "Request completed (but likely timed out)");
-					response.put("requestId", requestId);
-					response.put("delay", delay);
-					response.put("timestamp", System.currentTimeMillis());
-					return response;
-				}));
+		// This Mono never completes, causing a timeout
+		return Mono.never();
 	}
-
-
-
 
 }

@@ -20,32 +20,8 @@ spring:
       default-filters:
         - AddResponseHeader=X-Gateway, SpringCloudGateway  # 添加网关标识响应头
 
-        # Resilience4J 熔断器过滤器
-        # - name: CircuitBreaker
-        #   args:
-        #     name: myCircuitBreaker
-        #     fallbackUri: forward:/fallback
-
       routes:
-        # 正常响应测试 - 验证基本转发功能
-        - id: test-normal
-          order: 100
-          predicates:
-            - Path=/gateway/test/**
-          filters:
-            - StripPrefix=1  # 去掉 /gateway 前缀
-          uri: ${sample-server.uri}
-
-        # --------------------------------------------------------
         # 限流路由：所有以 /gateway/rate/ 开头的接口都应用限流
-        # 使用 smartKeyResolver，按路径段自动分组限流
-        # --------------------------------------------------------
-        # 示例效果：
-        #   /gateway/rate/api/*     → key: "IP:api"     (接口组)
-        #   /gateway/rate/admin/*   → key: "IP:admin"   (管理组)
-        #   /gateway/rate/public/*  → key: "IP:public"  (公开组)
-        # 每个分组独立计数，互不影响
-        # --------------------------------------------------------
         - id: rate-limited
           order: 200
           predicates:
@@ -61,57 +37,32 @@ spring:
                   replenish-rate: 1
           uri: ${sample-server.uri}
 
-        # 慢响应测试 - 触发熔断器超时
-        - id: test-slow
-          order: 101
+        # 熔断器路由 - 当下游服务失败时返回降级响应
+        - id: circuit-breaker-route
           predicates:
-            - Path=/gateway/test/slow
+            - Path=/gateway/breaker/**
           filters:
             - StripPrefix=1
+            - name: CircuitBreaker
+              args:
+                name: myCircuitBreaker
+                fallbackUri: forward:/fallback
           uri: ${sample-server.uri}
 
-        # 错误响应测试 - 触发熔断器
-        - id: test-error
-          order: 102
-          predicates:
-            - Path=/gateway/test/error
-          filters:
-            - StripPrefix=1
-          uri: ${sample-server.uri}
-
-        # 随机错误测试 - 测试间歇性故障
-        - id: test-random
-          order: 103
-          predicates:
-            - Path=/gateway/test/random
-          filters:
-            - StripPrefix=1
-          uri: ${sample-server.uri}
-
-        # 超时测试 - 测试长时间等待
-        - id: test-timeout
-          order: 104
-          predicates:
-            - Path=/gateway/test/timeout
-          filters:
-            - StripPrefix=1
-          uri: ${sample-server.uri}
-
-
-
+# ============================================================================
 # Resilience4J 熔断器配置
-# resilience4j:
-#   circuitbreaker:
-#     configs:
-#       default:
-#         sliding-window-size: 10        # 滑动窗口大小（请求数量）
-#         minimum-number-of-calls: 5     # 最小调用次数（达到后才计算失败率）
-#         failure-rate-threshold: 50     # 失败率阈值（50% 失败时熔断）
-#         wait-duration-in-open-state: 10s  # 熔断器打开后的等待时间
-#         permitted-number-of-calls-in-half-open-state: 3  # 半开状态允许的测试请求数
-#     instances:
-#       myCircuitBreaker:
-#         base-config: default
+# ============================================================================
+resilience4j:
+  circuitbreaker:
+    instances:
+      myCircuitBreaker:
+        sliding-window-size: 10           # 滑动窗口大小（最近10次请求）
+        minimum-number-of-calls: 5        # 最少调用5次后才计算失败率
+        failure-rate-threshold: 50       # 失败率达50%时熔断
+        wait-duration-in-open-state: 10s  # 熔断10秒后尝试恢复
+        permitted-number-of-calls-in-half-open-state: 3  # 半开状态允许3次测试请求
+        sliding-window-type: count_based  # 基于计数（而非时间）
+
 
 # ============================================================================
 # 日志配置：开发环境使用 DEBUG/TRACE 级别
@@ -123,6 +74,10 @@ logging:
     org.springframework.web.reactive: DEBUG      # WebFlux 日志
     reactor.ipc.netty: DEBUG                     # 旧版 Netty 日志
     reactor.netty: DEBUG                         # Reactor Netty 日志
+    # Resilience4J 熔断器日志
+    io.github.resilience4j: DEBUG               # 熔断器核心日志
+    io.github.resilience4j.circuitbreaker: TRACE  # 熔断器详细状态变化
+    io.github.resilience4j.microprof: TRACE     # Micrometer 集成日志
 
 # ============================================================================
 # Actuator 管理端点配置
